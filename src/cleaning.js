@@ -9,12 +9,14 @@
 /**
  * Main cleaning logic
  */
+
 function cleanData_withLogging() {
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   const source = ss.getSheetByName("Raw_Data");
   const dest = ss.getSheetByName("Clean_Data") || ss.insertSheet("Clean_Data");
+  const logSheet = ss.getSheetByName("Cleaning_Log") || ss.insertSheet("Cleaning_Log");
 
   dest.clearContents();
 
@@ -22,15 +24,17 @@ function cleanData_withLogging() {
 
   let totalRows = data.length - 1;
   let keptRows = 0;
-  let skippedMissing = 0;
-  let skippedInvalid = 0;
-  let skippedBelowThreshold = 0;
 
   const output = [];
 
-  // Copy header
+  // header output
   if (data.length > 0) {
     output.push(data[0]);
+  }
+
+  // header log
+  if (logSheet.getLastRow() === 0) {
+    logSheet.appendRow(["Timestamp", "Row", "Reason", "Name", "Email", "Sales"]);
   }
 
   for (let i = 1; i < data.length; i++) {
@@ -39,30 +43,37 @@ function cleanData_withLogging() {
     const email = String(data[i]?.[1] ?? "").trim();
     const venditeRaw = data[i]?.[2];
 
-    // Check required fields
+    let reason = "";
+
     if (!nome || !email) {
-      skippedMissing++;
-      Logger.log(`Row ${i + 1} skipped: missing Name or Email`);
-      continue;
+      reason = "Missing Name or Email";
     }
 
-    // Clean numeric value
     const cleaned = String(venditeRaw ?? "")
       .trim()
       .replace(/[^\d.,-]/g, "");
 
     const num = Number(cleaned.replace(",", "."));
 
-    if (isNaN(num)) {
-      skippedInvalid++;
-      Logger.log(`Row ${i + 1} skipped: invalid number`);
-      continue;
+    if (!reason && isNaN(num)) {
+      reason = "Invalid number";
     }
 
-    // Threshold check
-    if (num < 100) {
-      skippedBelowThreshold++;
-      Logger.log(`Row ${i + 1} skipped: below threshold`);
+    if (!reason && num < 100) {
+      reason = "Below threshold";
+    }
+
+    if (reason) {
+
+      logSheet.appendRow([
+        new Date(),
+        i + 1,
+        reason,
+        nome,
+        email,
+        venditeRaw
+      ]);
+
       continue;
     }
 
@@ -72,19 +83,12 @@ function cleanData_withLogging() {
 
   dest.getRange(1, 1, output.length, output[0].length).setValues(output);
 
-  Logger.log("=== CLEANING SUMMARY ===");
   Logger.log(`Total rows: ${totalRows}`);
   Logger.log(`Valid rows: ${keptRows}`);
-  Logger.log(`Missing fields: ${skippedMissing}`);
-  Logger.log(`Invalid numbers: ${skippedInvalid}`);
-  Logger.log(`Below threshold: ${skippedBelowThreshold}`);
 
   return {
     totalRows,
-    keptRows,
-    skippedMissing,
-    skippedInvalid,
-    skippedBelowThreshold
+    keptRows
   };
 }
 
